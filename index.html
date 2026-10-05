@@ -1,0 +1,1918 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Monster Hunter 3D - Wyvern Hunt</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Noto+Sans+JP:wght@500;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            touch-action: manipulation;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #050505;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        .font-cinzel {
+            font-family: 'Cinzel', serif;
+        }
+        .mh-border {
+            border: 2px solid #a88a4b;
+            box-shadow: inset 0 0 8px rgba(0,0,0,0.8), 0 0 10px rgba(168, 138, 75, 0.4);
+            background: rgba(20, 18, 15, 0.85);
+        }
+        .mh-gauge-bg {
+            background: linear-gradient(180deg, #1f1a14 0%, #0a0806 100%);
+            border: 2px solid #5a4a28;
+        }
+        @keyframes pulse-gold {
+            0%, 100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.6); }
+            50% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.9); }
+        }
+        .charge-glow {
+            animation: pulse-gold 0.6s infinite alternate;
+        }
+        .damage-number {
+            position: absolute;
+            font-weight: 900;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            animation: float-up 0.8s ease-out forwards;
+            text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
+        }
+        @keyframes float-up {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(0.8); }
+            20% { transform: translate(-50%, -80%) scale(1.3); }
+            100% { opacity: 0; transform: translate(-50%, -140%) scale(1.0); }
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            transition: all 0.15s ease;
+        }
+        .bow-crosshair {
+            border-color: #f59e0b !important;
+            width: 28px !important;
+            height: 28px !important;
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.8);
+        }
+        .touch-btn {
+            backdrop-filter: blur(6px);
+            background: rgba(20, 18, 15, 0.85);
+            border: 2px solid #a88a4b;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+            touch-action: none;
+        }
+        .touch-btn:active {
+            transform: scale(0.92);
+            background: rgba(168, 138, 75, 0.6);
+        }
+    </style>
+</head>
+<body class="relative text-white overflow-hidden">
+
+    <!-- UI OVERLAY -->
+    <div id="ui-container" class="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+        <!-- Lockon Indicator -->
+        <div id="lockon-marker" class="hidden absolute w-10 h-10 border-2 border-red-500 rounded-full transition-all duration-75 -translate-x-1/2 -translate-y-1/2">
+            <div class="absolute inset-2 border border-yellow-400 rotate-45"></div>
+        </div>
+
+        <div id="crosshair"></div>
+
+        <!-- TOP LEFT: Hunter Status Bar -->
+        <div class="absolute top-3 left-3 w-56 sm:w-72 md:w-96 p-2 sm:p-3 mh-border rounded-lg space-y-1.5 pointer-events-auto">
+            <div class="flex items-center justify-between">
+                <span class="font-cinzel text-[10px] sm:text-xs text-amber-400 font-bold tracking-widest">HUNTER STATUS</span>
+                <div class="flex items-center gap-1.5">
+                    <span id="potion-count-badge" class="text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-bold bg-emerald-900/80 text-emerald-300 border border-emerald-500/50">🧪 <span id="potion-count">5</span></span>
+                    <span id="sharpness-badge" class="text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-bold bg-green-500 text-black font-extrabold shadow">斬れ味: 緑</span>
+                </div>
+            </div>
+            
+            <!-- Health Bar -->
+            <div class="space-y-0.5">
+                <div class="flex justify-between text-[10px] sm:text-xs text-gray-300">
+                    <span>体力 (HP)</span>
+                    <span id="hp-text">100 / 100</span>
+                </div>
+                <div class="w-full h-3 sm:h-4 mh-gauge-bg rounded p-0.5 relative overflow-hidden">
+                    <div id="hp-bar-red" class="h-full bg-red-700 transition-all duration-300 absolute left-0 top-0 rounded" style="width: 100%;"></div>
+                    <div id="hp-bar" class="h-full bg-gradient-to-r from-green-600 to-emerald-400 rounded transition-all duration-100 relative" style="width: 100%;"></div>
+                </div>
+            </div>
+
+            <!-- Stamina Bar -->
+            <div class="space-y-0.5">
+                <div class="flex justify-between text-[10px] sm:text-xs text-gray-300">
+                    <span>スタミナ</span>
+                    <span id="stamina-text">100 / 100</span>
+                </div>
+                <div class="w-full h-2.5 sm:h-3 mh-gauge-bg rounded p-0.5">
+                    <div id="stamina-bar" class="h-full bg-gradient-to-r from-amber-500 to-yellow-300 rounded transition-all duration-75" style="width: 100%;"></div>
+                </div>
+            </div>
+
+            <!-- Charge Level Indicator -->
+            <div id="charge-container" class="hidden flex items-center justify-between bg-black/60 p-1 rounded border border-amber-500/50">
+                <span id="charge-label" class="text-[10px] sm:text-xs text-amber-300 font-bold">溜め段階:</span>
+                <div class="flex gap-1.5">
+                    <div id="charge-1" class="w-5 sm:w-6 h-2.5 sm:h-3 border border-gray-600 rounded bg-gray-800"></div>
+                    <div id="charge-2" class="w-5 sm:w-6 h-2.5 sm:h-3 border border-gray-600 rounded bg-gray-800"></div>
+                    <div id="charge-3" class="w-5 sm:w-6 h-2.5 sm:h-3 border border-gray-600 rounded bg-gray-800"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TOP CENTER: Boss Health Bar -->
+        <div class="absolute top-3 left-1/2 -translate-x-1/2 w-11/12 max-w-sm sm:max-w-xl p-2 sm:p-3 mh-border rounded-lg text-center pointer-events-auto">
+            <div class="flex justify-between items-center mb-0.5">
+                <span id="boss-name-text" class="font-cinzel text-xs sm:text-base font-bold text-red-500 tracking-wider truncate">紅蓮竜 ヴァルガノス (通常)</span>
+                <span id="boss-hp-text" class="text-[10px] sm:text-xs text-gray-300 ml-2">2200 / 2200</span>
+            </div>
+            <div class="w-full h-3.5 sm:h-5 mh-gauge-bg rounded p-0.5 relative">
+                <div id="boss-hp-bar" class="h-full bg-gradient-to-r from-red-800 via-red-600 to-orange-500 rounded transition-all duration-150" style="width: 100%;"></div>
+            </div>
+        </div>
+
+        <!-- TOP RIGHT: Quest Info -->
+        <div class="absolute top-3 right-3 p-2 sm:p-3 mh-border rounded-lg text-right hidden sm:block pointer-events-auto">
+            <div class="text-[10px] text-amber-400 font-bold">メインターゲット</div>
+            <div id="quest-target-text" class="text-xs font-bold text-gray-200">紅蓮竜1頭の討伐</div>
+            <div class="text-[10px] text-gray-400 mt-0.5">残り時間: <span id="quest-timer" class="text-white font-mono font-bold">50:00</span></div>
+        </div>
+
+        <!-- MOBILE TOUCH CONTROLS OVERLAY -->
+        <div id="mobile-controls" class="absolute inset-0 pointer-events-auto z-20">
+            <!-- Touch Camera Area (Right side background swipe) -->
+            <div id="touch-camera-zone" class="absolute top-0 right-0 w-1/2 h-full touch-none z-0"></div>
+
+            <!-- Left Side: Virtual Joystick Zone -->
+            <div id="joystick-zone" class="absolute bottom-6 left-6 w-32 h-32 md:w-40 md:h-40 rounded-full bg-black/40 border-2 border-amber-500/30 flex items-center justify-center touch-none z-10">
+                <div id="joystick-knob" class="w-12 h-12 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-amber-500 to-amber-700 border-2 border-amber-300 shadow-lg pointer-events-none transform transition-transform duration-75"></div>
+            </div>
+
+            <!-- Right Side: Action Buttons -->
+            <div class="absolute bottom-6 right-6 flex flex-col gap-3 items-end touch-none z-10">
+                <!-- Utility Buttons Row -->
+                <div class="flex gap-2.5 items-center">
+                    <!-- Lockon Button -->
+                    <button id="btn-touch-lockon" type="button" class="w-12 h-12 sm:w-14 sm:h-14 rounded-full touch-btn border-yellow-500/70 flex flex-col items-center justify-center text-yellow-300 text-[10px] sm:text-xs font-bold active:scale-90">
+                        <span class="text-base sm:text-lg">🎯</span>
+                        <span>視点固定</span>
+                    </button>
+                    <!-- Potion Button -->
+                    <button id="btn-touch-potion" type="button" class="w-14 h-14 sm:w-16 sm:h-16 rounded-full touch-btn border-emerald-500/80 bg-emerald-950/60 flex flex-col items-center justify-center text-emerald-300 text-[10px] sm:text-xs font-bold active:scale-90 relative">
+                        <span class="text-lg sm:text-xl">🧪</span>
+                        <span>回復薬</span>
+                        <span id="mobile-potion-count" class="absolute -top-1 -right-1 bg-amber-600 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold border border-amber-300">5</span>
+                    </button>
+                </div>
+
+                <!-- Combat Action Buttons Row -->
+                <div class="flex gap-3 items-center">
+                    <!-- Dodge Button -->
+                    <button id="btn-touch-dodge" type="button" class="w-14 h-14 sm:w-16 sm:h-16 rounded-full touch-btn border-blue-400/80 bg-blue-950/60 flex flex-col items-center justify-center text-blue-200 text-xs font-bold active:scale-90">
+                        <span class="text-lg sm:text-xl">🏃</span>
+                        <span>回避</span>
+                    </button>
+
+                    <!-- Primary Attack Button -->
+                    <button id="btn-touch-attack" type="button" class="w-14 h-14 sm:w-16 sm:h-16 rounded-full touch-btn border-amber-400 bg-amber-950/80 flex flex-col items-center justify-center text-amber-200 text-xs sm:text-sm font-black shadow-lg active:scale-90">
+                        <span id="btn-attack-icon" class="text-lg sm:text-xl">⚔️</span>
+                        <span id="btn-attack-label">攻撃</span>
+                    </button>
+
+                    <!-- Charge / Special Attack Button -->
+                    <button id="btn-touch-charge" type="button" class="w-16 h-16 sm:w-20 sm:h-20 rounded-full touch-btn border-amber-400 bg-gradient-to-br from-amber-600 to-amber-800 flex flex-col items-center justify-center text-amber-100 text-xs sm:text-sm font-black shadow-xl active:scale-90">
+                        <span id="btn-charge-icon" class="text-xl sm:text-2xl">💥</span>
+                        <span id="btn-charge-label">特殊攻撃</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PC Keyboard Hints -->
+        <div class="absolute bottom-6 left-6 mh-border p-3 rounded-lg text-xs text-gray-300 space-y-1 bg-black/80 hidden lg:block pointer-events-auto">
+            <div class="text-amber-400 font-bold mb-1">【PC操作方法】</div>
+            <div>[W][A][S][D] : 移動 | [Shift] : ダッシュ</div>
+            <div>[J] / [左クリック] : 通常攻撃 | [K] / [右クリック長押し] : 溜め/特殊</div>
+            <div>[Space] : 回避 | [E] : 回復薬 | [F] : 視点固定 | [ドラッグ] : 視点回転</div>
+        </div>
+    </div>
+
+    <!-- START / GAME OVER / VICTORY OVERLAYS -->
+    <div id="modal-overlay" class="absolute inset-0 bg-black/85 z-30 flex items-center justify-center p-4">
+        <!-- Start Screen -->
+        <div id="modal-start" class="mh-border p-5 sm:p-8 rounded-xl max-w-lg w-full text-center space-y-4">
+            <h1 class="text-2xl sm:text-4xl font-black font-cinzel text-amber-400 tracking-wider">WYVERN HUNT 3D</h1>
+            <p class="text-xs text-gray-300">ターゲットと武器を選択してクエストへ挑もう！</p>
+            
+            <!-- Monster Selector Cards -->
+            <div class="space-y-1 text-left">
+                <div class="text-[10px] font-bold text-amber-400">1. 討伐ターゲット選択</div>
+                <div class="grid grid-cols-3 gap-2">
+                    <button type="button" onclick="selectMonster('BEGINNER')" id="monster-btn-BEGINNER" class="monster-card p-2 rounded-lg border-2 border-gray-700 bg-black/50 opacity-70 flex flex-col items-center transition">
+                        <span class="text-xl sm:text-2xl">🌱</span>
+                        <span class="font-bold text-[11px] sm:text-xs text-emerald-400 mt-0.5">初級</span>
+                        <span class="text-[9px] text-gray-400">ドスヴァルガ</span>
+                    </button>
+                    <button type="button" onclick="selectMonster('NORMAL')" id="monster-btn-NORMAL" class="monster-card p-2 rounded-lg border-2 border-amber-400 bg-amber-950/60 flex flex-col items-center transition scale-105 shadow-md">
+                        <span class="text-xl sm:text-2xl">🔥</span>
+                        <span class="font-bold text-[11px] sm:text-xs text-amber-400 mt-0.5">通常</span>
+                        <span class="text-[9px] text-gray-400">ヴァルガノス</span>
+                    </button>
+                    <button type="button" onclick="selectMonster('UNREASONABLE')" id="monster-btn-UNREASONABLE" class="monster-card p-2 rounded-lg border-2 border-gray-700 bg-black/50 opacity-70 flex flex-col items-center transition">
+                        <span class="text-xl sm:text-2xl">💀</span>
+                        <span class="font-bold text-[11px] sm:text-xs text-purple-400 mt-0.5">理不尽</span>
+                        <span class="text-[9px] text-gray-400">ヴォルカノス</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Weapon Selector Cards -->
+            <div class="space-y-1 text-left">
+                <div class="text-[10px] font-bold text-amber-400">2. 武器選択</div>
+                <div class="grid grid-cols-3 gap-2">
+                    <button type="button" onclick="selectWeapon('GREATSWORD')" id="weapon-btn-GREATSWORD" class="weapon-card p-2 sm:p-3 rounded-lg border-2 border-amber-400 bg-amber-950/60 flex flex-col items-center transition">
+                        <span class="text-2xl sm:text-3xl">🗡️</span>
+                        <span class="font-bold text-xs sm:text-sm text-amber-300 mt-1">大剣</span>
+                        <span class="text-[9px] sm:text-[10px] text-gray-400 mt-0.5">高火力・溜め斬り</span>
+                    </button>
+                    <button type="button" onclick="selectWeapon('DUAL_BLADES')" id="weapon-btn-DUAL_BLADES" class="weapon-card p-2 sm:p-3 rounded-lg border-2 border-gray-700 bg-black/50 opacity-70 flex flex-col items-center transition">
+                        <span class="text-2xl sm:text-3xl">⚔️</span>
+                        <span class="font-bold text-xs sm:text-sm text-gray-200 mt-1">双剣</span>
+                        <span class="text-[9px] sm:text-[10px] text-gray-400 mt-0.5">超高速・鬼人連撃</span>
+                    </button>
+                    <button type="button" onclick="selectWeapon('BOW')" id="weapon-btn-BOW" class="weapon-card p-2 sm:p-3 rounded-lg border-2 border-gray-700 bg-black/50 opacity-70 flex flex-col items-center transition">
+                        <span class="text-2xl sm:text-3xl">🏹</span>
+                        <span class="font-bold text-xs sm:text-sm text-gray-200 mt-1">弓</span>
+                        <span class="text-[9px] sm:text-[10px] text-gray-400 mt-0.5">遠距離・部位狙い</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-black/50 p-2.5 sm:p-3 rounded-lg text-left text-[11px] sm:text-xs space-y-1 border border-amber-900/50">
+                <div class="flex justify-between items-center">
+                    <span class="text-amber-400 font-bold" id="monster-desc-title">🔥 ターゲット情報:</span>
+                    <span id="monster-difficulty-badge" class="px-1.5 py-0.5 text-[10px] rounded font-bold bg-amber-900 text-amber-200 border border-amber-500">通常難易度</span>
+                </div>
+                <div id="monster-desc-text" class="text-gray-300">
+                    バランスの取れた標準的なモンスター。適度な緊張感でハンティングを楽しめます。
+                </div>
+            </div>
+
+            <button id="btn-start" type="button" class="w-full py-3.5 sm:py-4 bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-black font-black text-base sm:text-lg rounded-lg shadow-lg active:scale-95 transition cursor-pointer">
+                クエスト出発！
+            </button>
+        </div>
+
+        <!-- Result Screen -->
+        <div id="modal-result" class="hidden mh-border p-6 sm:p-8 rounded-xl max-w-lg w-full text-center space-y-5">
+            <h2 id="result-title" class="text-2xl sm:text-4xl font-black font-cinzel tracking-wider">QUEST COMPLETE</h2>
+            <div id="result-stats" class="bg-black/50 p-4 rounded-lg text-xs sm:text-sm space-y-2 text-gray-300"></div>
+            <button id="btn-restart" type="button" class="w-full py-3 bg-amber-600 hover:bg-amber-500 text-black font-bold text-base rounded-lg transition active:scale-95 cursor-pointer">
+                拠点に戻る (リトライ)
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer;
+        const clock = new THREE.Clock();
+        const arenaRadius = 40;
+        let questStartTime = 0;
+        const questTime = 3000;
+        let gameState = 'START';
+        let lockOn = false;
+        let particles = [];
+        let breathProjectiles = [];
+        let playerProjectiles = [];
+        let hitStopTimer = 0;
+        let shakeIntensity = 0;
+        let selectedWeaponType = 'GREATSWORD';
+        let selectedMonsterKey = 'NORMAL';
+
+        // Monster Difficulty Presets
+        const MONSTER_PRESETS = {
+            BEGINNER: {
+                name: "若竜 ドスヴァルガ (初級)",
+                shortName: "若竜ドスヴァルガ",
+                maxHp: 1000,
+                speed: 4.0,
+                chargeSpeed: 8.0,
+                damageMult: 0.5,
+                tauntChance: 0.6,
+                tauntTime: 2.2,
+                colorBody: 0x1b4d2e,
+                colorHead: 0x2e8b57,
+                colorWing: 0x0f381e,
+                desc: "体力と威力が低く、攻撃後に大きな隙を見せる初級者向けモンスター。操作や攻撃の練習に最適です。"
+            },
+            NORMAL: {
+                name: "紅蓮竜 ヴァルガノス (通常)",
+                shortName: "紅蓮竜ヴァルガノス",
+                maxHp: 2200,
+                speed: 6.0,
+                chargeSpeed: 12.0,
+                damageMult: 1.0,
+                tauntChance: 0.3,
+                tauntTime: 1.5,
+                colorBody: 0x991111,
+                colorHead: 0xee2222,
+                colorWing: 0x660808,
+                desc: "バランスの取れた標準的なモンスター。適度な緊張感でハンティングを楽しめます。"
+            },
+            UNREASONABLE: {
+                name: "極・絶望竜 ヴォルカノス (理不尽)",
+                shortName: "絶望竜ヴォルカノス",
+                maxHp: 5500,
+                speed: 11.5,
+                chargeSpeed: 23.0,
+                damageMult: 2.8,
+                tauntChance: 0.02,
+                tauntTime: 0.4,
+                colorBody: 0x22052e,
+                colorHead: 0xff0044,
+                colorWing: 0x12001a,
+                desc: "【超絶難易度】圧倒的な体力、爆速の突進力、超高火力を誇る理不尽なモンスター。一瞬の油断が死に直結します。"
+            }
+        };
+
+        // Monster stats state
+        const monster = {
+            hp: 2200,
+            maxHp: 2200,
+            mesh: null,
+            headMesh: null,
+            bodyMesh: null,
+            wingLMesh: null,
+            wingRMesh: null,
+            tailMesh: null,
+            state: 'IDLE',
+            stateTimer: 0,
+            speed: 6.0,
+            chargeSpeed: 12,
+            damageMult: 1.0,
+            tauntChance: 0.3,
+            tauntTime: 1.5,
+            hasFiredBreath: false,
+            rotSpeed: 2.0
+        };
+
+        function selectMonster(monsterKey) {
+            selectedMonsterKey = monsterKey;
+            const preset = MONSTER_PRESETS[monsterKey];
+
+            const buttons = ['BEGINNER', 'NORMAL', 'UNREASONABLE'];
+            buttons.forEach(m => {
+                const btn = document.getElementById(`monster-btn-${m}`);
+                if (!btn) return;
+                if (m === monsterKey) {
+                    btn.className = 'monster-card p-2 rounded-lg border-2 border-amber-400 bg-amber-950/60 flex flex-col items-center transition scale-105 shadow-md';
+                } else {
+                    btn.className = 'monster-card p-2 rounded-lg border-2 border-gray-700 bg-black/50 opacity-70 flex flex-col items-center transition';
+                }
+            });
+
+            const descTitle = document.getElementById('monster-desc-title');
+            const descText = document.getElementById('monster-desc-text');
+            const badge = document.getElementById('monster-difficulty-badge');
+
+            if (descTitle) descTitle.innerText = `🔥 ${preset.shortName}:`;
+            if (descText) descText.innerText = preset.desc;
+
+            if (badge) {
+                if (monsterKey === 'BEGINNER') {
+                    badge.innerText = '初級難易度';
+                    badge.className = 'px-1.5 py-0.5 text-[10px] rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-500';
+                } else if (monsterKey === 'NORMAL') {
+                    badge.innerText = '通常難易度';
+                    badge.className = 'px-1.5 py-0.5 text-[10px] rounded font-bold bg-amber-900 text-amber-200 border border-amber-500';
+                } else {
+                    badge.innerText = '⚠️ 理不尽難易度';
+                    badge.className = 'px-1.5 py-0.5 text-[10px] rounded font-bold bg-purple-950 text-purple-300 border border-purple-500 animate-pulse';
+                }
+            }
+
+            // Update Header Name
+            const bossNameText = document.getElementById('boss-name-text');
+            if (bossNameText) bossNameText.innerText = preset.name;
+
+            const questTargetText = document.getElementById('quest-target-text');
+            if (questTargetText) questTargetText.innerText = `${preset.shortName}1頭の討伐`;
+
+            // Re-create monster geometry with new preset colors if scene ready
+            if (scene) createMonster();
+        }
+
+        // Sound Effects Engine
+        const sfx = {
+            ctx: null,
+            init() {
+                if (!this.ctx) {
+                    try {
+                        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        if (AudioCtx) this.ctx = new AudioCtx();
+                    } catch (e) {
+                        console.warn("AudioContext init failed", e);
+                    }
+                }
+            },
+            resume() {
+                this.init();
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume().catch(() => {});
+                }
+            },
+            playTone(freq, type, duration, vol = 0.1) {
+                if (!this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch (e) {}
+            },
+            playNoise(duration, vol = 0.1) {
+                if (!this.ctx) return;
+                try {
+                    const bufferSize = this.ctx.sampleRate * duration;
+                    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                    const output = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        output[i] = Math.random() * 2 - 1;
+                    }
+                    const whiteNoise = this.ctx.createBufferSource();
+                    whiteNoise.buffer = buffer;
+                    const gain = this.ctx.createGain();
+                    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+                    whiteNoise.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    whiteNoise.start();
+                } catch (e) {}
+            },
+            playSwing() { this.playTone(180, 'sine', 0.15, 0.15); },
+            playFastSwing() { this.playTone(320, 'triangle', 0.08, 0.12); },
+            playArrowShot() { this.playTone(600, 'sine', 0.1, 0.1); },
+            playHeavyHit() { this.playNoise(0.2, 0.3); this.playTone(80, 'sawtooth', 0.25, 0.3); },
+            playDodge() { this.playTone(220, 'sine', 0.12, 0.1); },
+            playPotion() { this.playTone(523.25, 'sine', 0.15, 0.1); setTimeout(() => this.playTone(659.25, 'sine', 0.2, 0.1), 100); },
+            playFireBreath() { this.playNoise(0.5, 0.25); this.playTone(120, 'sawtooth', 0.4, 0.2); },
+            playChargePing(level) { this.playTone(300 + level * 200, 'sine', 0.2, 0.2); }
+        };
+
+        const player = {
+            hp: 100,
+            maxHp: 100,
+            stamina: 100,
+            maxStamina: 100,
+            potions: 5,
+            speed: 12,
+            sprintSpeed: 19,
+            isDodging: false,
+            dodgeTimer: 0,
+            dodgeDuration: 0.45,
+            invincible: false,
+            isAttacking: false,
+            comboStep: 0,
+            isCharging: false,
+            chargeLevel: 0,
+            chargeTimer: 0,
+            weapon: 'GREATSWORD',
+            mesh: null,
+            greatswordMesh: null,
+            dualBladesMesh: null,
+            bowMesh: null,
+            rotationY: 0
+        };
+
+        const keys = {};
+        const joystickVector = { x: 0, y: 0 };
+        let cameraAngleX = 0;
+        let cameraAngleY = 0.3;
+        let cameraDistance = 14;
+
+        function createHunter() {
+            try {
+                const group = new THREE.Group();
+
+                const bodyGeo = new THREE.BoxGeometry(1, 1.4, 0.7);
+                const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3b4a5a, roughness: 0.4, metalness: 0.6 });
+                const body = new THREE.Mesh(bodyGeo, bodyMat);
+                body.position.y = 1.4;
+                body.castShadow = true;
+                group.add(body);
+
+                const headGeo = new THREE.BoxGeometry(0.7, 0.7, 0.7);
+                const headMat = new THREE.MeshStandardMaterial({ color: 0x8a7343, metalness: 0.8, roughness: 0.2 });
+                const head = new THREE.Mesh(headGeo, headMat);
+                head.position.y = 2.4;
+                head.castShadow = true;
+                group.add(head);
+
+                const limbMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+                
+                const legLeft = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.2, 0.4), limbMat);
+                legLeft.position.set(-0.3, 0.6, 0);
+                legLeft.castShadow = true;
+                group.add(legLeft);
+
+                const legRight = legLeft.clone();
+                legRight.position.x = 0.3;
+                group.add(legRight);
+
+                // --- WEAPON 1: Greatsword ---
+                const gsGroup = new THREE.Group();
+                const bladeGeo = new THREE.BoxGeometry(0.35, 3.2, 0.1);
+                const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd0d5dd, metalness: 0.9, roughness: 0.1 });
+                const blade = new THREE.Mesh(bladeGeo, bladeMat);
+                blade.position.y = 1.6;
+                blade.castShadow = true;
+                gsGroup.add(blade);
+
+                const hiltGeo = new THREE.BoxGeometry(0.8, 0.15, 0.2);
+                const hiltMat = new THREE.MeshStandardMaterial({ color: 0x8a1c1c });
+                const hilt = new THREE.Mesh(hiltGeo, hiltMat);
+                hilt.position.y = 0;
+                gsGroup.add(hilt);
+
+                gsGroup.position.set(0, 1.8, -0.5);
+                gsGroup.rotation.set(0, 0, -Math.PI * 0.75);
+                group.add(gsGroup);
+                player.greatswordMesh = gsGroup;
+
+                // --- WEAPON 2: Dual Blades ---
+                const dbGroup = new THREE.Group();
+                const dbBladeMat = new THREE.MeshStandardMaterial({ color: 0x3388ff, metalness: 0.8, roughness: 0.2 });
+                
+                const dbLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.5, 0.08), dbBladeMat);
+                dbLeft.position.set(0.6, 1.2, 0.4);
+                dbLeft.castShadow = true;
+                dbGroup.add(dbLeft);
+
+                const dbRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.5, 0.08), dbBladeMat);
+                dbRight.position.set(-0.6, 1.2, 0.4);
+                dbRight.castShadow = true;
+                dbGroup.add(dbRight);
+
+                group.add(dbGroup);
+                player.dualBladesMesh = dbGroup;
+
+                // --- WEAPON 3: Bow ---
+                const bowGroup = new THREE.Group();
+                const bowMat = new THREE.MeshStandardMaterial({ color: 0xcc8822, roughness: 0.4 });
+                const bowCurve = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.08, 8, 16, Math.PI), bowMat);
+                bowCurve.rotation.y = Math.PI / 2;
+                bowCurve.position.set(-0.5, 1.5, 0.3);
+                bowGroup.add(bowCurve);
+
+                group.add(bowGroup);
+                player.bowMesh = bowGroup;
+
+                player.mesh = group;
+                scene.add(group);
+                updateWeaponVisibility();
+            } catch (e) {
+                console.error("Error creating hunter:", e);
+            }
+        }
+
+        function updateWeaponVisibility() {
+            if (player.greatswordMesh) player.greatswordMesh.visible = (player.weapon === 'GREATSWORD');
+            if (player.dualBladesMesh) player.dualBladesMesh.visible = (player.weapon === 'DUAL_BLADES');
+            if (player.bowMesh) player.bowMesh.visible = (player.weapon === 'BOW');
+        }
+
+        function selectWeapon(weaponType) {
+            selectedWeaponType = weaponType;
+            player.weapon = weaponType;
+
+            const buttons = ['GREATSWORD', 'DUAL_BLADES', 'BOW'];
+            buttons.forEach(w => {
+                const btn = document.getElementById(`weapon-btn-${w}`);
+                if (!btn) return;
+                if (w === weaponType) {
+                    btn.className = 'weapon-card p-2 sm:p-3 rounded-lg border-2 border-amber-400 bg-amber-950/60 flex flex-col items-center transition scale-105 shadow-md';
+                } else {
+                    btn.className = 'weapon-card p-2 sm:p-3 rounded-lg border-2 border-gray-700 bg-black/50 opacity-70 flex flex-col items-center transition';
+                }
+            });
+
+            const descTitle = document.getElementById('weapon-desc-title');
+            const descText = document.getElementById('weapon-desc-text');
+            const attackLabel = document.getElementById('btn-attack-label');
+            const attackIcon = document.getElementById('btn-attack-icon');
+            const chargeLabel = document.getElementById('btn-charge-label');
+            const chargeIcon = document.getElementById('btn-charge-icon');
+
+            const crosshair = document.getElementById('crosshair');
+
+            if (weaponType === 'GREATSWORD') {
+                if (descTitle) descTitle.innerText = '🗡️ 大剣の特徴:';
+                if (descText) descText.innerText = '一撃の破壊力が高い近接武器。「溜め斬り」ボタンを長押しして溜め段階を上げ、強力な溜め斬りを叩き込もう！';
+                if (attackLabel) attackLabel.innerText = '斬撃';
+                if (attackIcon) attackIcon.innerText = '⚔️';
+                if (chargeLabel) chargeLabel.innerText = '溜め斬り';
+                if (chargeIcon) chargeIcon.innerText = '💥';
+                if (crosshair) crosshair.classList.remove('bow-crosshair');
+            } else if (weaponType === 'DUAL_BLADES') {
+                if (descTitle) descTitle.innerText = '⚔ 双剣の特徴:';
+                if (descText) descText.innerText = '圧倒的な手数と機動性を誇る近接武器。威力を調整し連続でダメージを刻みやすい設計に！';
+                if (attackLabel) attackLabel.innerText = '連撃';
+                if (attackIcon) attackIcon.innerText = '⚔️';
+                if (chargeLabel) chargeLabel.innerText = '突進乱舞';
+                if (chargeIcon) chargeIcon.innerText = '🌀';
+                if (crosshair) crosshair.classList.remove('bow-crosshair');
+            } else if (weaponType === 'BOW') {
+                if (descTitle) descTitle.innerText = '🏹 弓の特徴:';
+                if (descText) descText.innerText = '弱点へのスマート誘導アシストを追加！狙いを定めて強力な部位破壊＆連続アタック！';
+                if (attackLabel) attackLabel.innerText = '射撃';
+                if (attackIcon) attackIcon.innerText = '🏹';
+                if (chargeLabel) chargeLabel.innerText = '溜め射撃';
+                if (chargeIcon) chargeIcon.innerText = '🎯';
+                if (crosshair) crosshair.classList.add('bow-crosshair');
+            }
+
+            updateWeaponVisibility();
+        }
+
+        function init() {
+            try {
+                // Setup Scene
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x0c0a0d);
+                scene.fog = new THREE.FogExp2(0x0c0a0d, 0.015);
+
+                // Camera
+                camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+                // Renderer
+                renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                document.body.appendChild(renderer.domElement);
+
+                // Lighting
+                const ambientLight = new THREE.AmbientLight(0xffeedd, 0.6);
+                scene.add(ambientLight);
+
+                const dirLight = new THREE.DirectionalLight(0xfff0dd, 1.3);
+                dirLight.position.set(20, 45, 20);
+                dirLight.castShadow = true;
+                dirLight.shadow.mapSize.width = 2048;
+                dirLight.shadow.mapSize.height = 2048;
+                dirLight.shadow.camera.near = 0.5;
+                dirLight.shadow.camera.far = 150;
+                const d = 45;
+                dirLight.shadow.camera.left = -d;
+                dirLight.shadow.camera.right = d;
+                dirLight.shadow.camera.top = d;
+                dirLight.shadow.camera.bottom = -d;
+                scene.add(dirLight);
+
+                // Arena Floor
+                const groundGeo = new THREE.CircleGeometry(arenaRadius, 64);
+                const groundMat = new THREE.MeshStandardMaterial({ color: 0x221c18, roughness: 0.9, metalness: 0.1 });
+                const ground = new THREE.Mesh(groundGeo, groundMat);
+                ground.rotation.x = -Math.PI / 2;
+                ground.receiveShadow = true;
+                scene.add(ground);
+
+                // Arena Ring Edge
+                const ringGeo = new THREE.RingGeometry(arenaRadius - 0.5, arenaRadius, 64);
+                const ringMat = new THREE.MeshBasicMaterial({ color: 0xa88a4b, side: THREE.DoubleSide });
+                const ring = new THREE.Mesh(ringGeo, ringMat);
+                ring.rotation.x = -Math.PI / 2;
+                ring.position.y = 0.02;
+                scene.add(ring);
+
+                createHunter();
+                createMonster();
+                setupEventListeners();
+
+                selectWeapon('GREATSWORD');
+                animate();
+            } catch (err) {
+                console.error("Initialization error:", err);
+            }
+        }
+
+        function createMonster() {
+            try {
+                if (monster.mesh) {
+                    scene.remove(monster.mesh);
+                }
+
+                const preset = MONSTER_PRESETS[selectedMonsterKey] || MONSTER_PRESETS.NORMAL;
+                
+                monster.hp = monster.maxHp = preset.maxHp;
+                monster.speed = preset.speed;
+                monster.chargeSpeed = preset.chargeSpeed;
+                monster.damageMult = preset.damageMult;
+                monster.tauntChance = preset.tauntChance;
+                monster.tauntTime = preset.tauntTime;
+
+                const group = new THREE.Group();
+
+                // 1. Torso / Body Part
+                const bodyGeo = new THREE.BoxGeometry(3.5, 3.2, 6.5);
+                const bodyMat = new THREE.MeshStandardMaterial({ color: preset.colorBody, roughness: 0.3, metalness: 0.3 });
+                const body = new THREE.Mesh(bodyGeo, bodyMat);
+                body.position.y = 3.5;
+                body.castShadow = true;
+                group.add(body);
+                monster.bodyMesh = body;
+
+                // 2. Head Part (Weak spot)
+                const headGroup = new THREE.Group();
+                headGroup.position.set(0, 4.2, -3.8);
+
+                const headGeo = new THREE.BoxGeometry(2.2, 2.0, 3.0);
+                const headMat = new THREE.MeshStandardMaterial({ color: preset.colorHead, roughness: 0.2, metalness: 0.4 });
+                const head = new THREE.Mesh(headGeo, headMat);
+                head.position.z = -1.0;
+                head.castShadow = true;
+                headGroup.add(head);
+
+                // Horns
+                const hornMat = new THREE.MeshStandardMaterial({ color: selectedMonsterKey === 'UNREASONABLE' ? 0xff2200 : 0xd4af37, roughness: 0.2 });
+                const hornL = new THREE.Mesh(new THREE.ConeGeometry(0.35, selectedMonsterKey === 'UNREASONABLE' ? 3.2 : 2.2, 6), hornMat);
+                hornL.rotation.x = -Math.PI / 3;
+                hornL.position.set(0.8, 1.2, -1.5);
+                headGroup.add(hornL);
+
+                const hornR = hornL.clone();
+                hornR.position.x = -0.8;
+                headGroup.add(hornR);
+
+                group.add(headGroup);
+                monster.headMesh = headGroup;
+
+                // 3. Wings Parts
+                const wingMat = new THREE.MeshStandardMaterial({ color: preset.colorWing, side: THREE.DoubleSide, roughness: 0.6 });
+                const wingGeo = new THREE.BoxGeometry(7, 0.2, 4);
+
+                const wingL = new THREE.Mesh(wingGeo, wingMat);
+                wingL.position.set(5.0, 4.2, -0.5);
+                wingL.rotation.set(0.2, -0.3, 0.2);
+                wingL.castShadow = true;
+                group.add(wingL);
+                monster.wingLMesh = wingL;
+
+                const wingR = new THREE.Mesh(wingGeo, wingMat);
+                wingR.position.set(-5.0, 4.2, -0.5);
+                wingR.rotation.set(0.2, 0.3, -0.2);
+                wingR.castShadow = true;
+                group.add(wingR);
+                monster.wingRMesh = wingR;
+
+                // 4. Tail Part
+                const tailGeo = new THREE.ConeGeometry(1.2, 6.5, 8);
+                const tailMat = new THREE.MeshStandardMaterial({ color: preset.colorBody });
+                const tail = new THREE.Mesh(tailGeo, tailMat);
+                tail.position.set(0, 3.0, 5.5);
+                tail.rotation.x = -Math.PI / 2.2;
+                tail.castShadow = true;
+                group.add(tail);
+                monster.tailMesh = tail;
+
+                monster.mesh = group;
+                scene.add(group);
+            } catch (e) {
+                console.error("Error creating monster:", e);
+            }
+        }
+
+        function updateMonsterAI(delta) {
+            if (!monster.mesh || !player.mesh) return;
+
+            monster.stateTimer -= delta;
+
+            const bossPos = monster.mesh.position;
+            const playerPos = player.mesh.position;
+
+            const dirToPlayer = new THREE.Vector3().subVectors(playerPos, bossPos);
+            dirToPlayer.y = 0;
+            const dist = dirToPlayer.length();
+
+            // Turn head speed boost for Unreasonable monster
+            const turnFactor = selectedMonsterKey === 'UNREASONABLE' ? 5.0 : monster.rotSpeed;
+
+            // Fix: Monster head is facing -Z direction, so add Math.PI to turn head towards player
+            const targetAngle = Math.atan2(dirToPlayer.x, dirToPlayer.z) + Math.PI;
+            let angleDiff = targetAngle - monster.mesh.rotation.y;
+
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+            monster.mesh.rotation.y += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), turnFactor * delta);
+
+            // State Machine Transition
+            if (monster.state === 'IDLE' || monster.stateTimer <= 0) {
+                if (monster.state.startsWith('ATTACK')) {
+                    if (Math.random() < monster.tauntChance) {
+                        monster.state = 'TAUNT';
+                        monster.stateTimer = monster.tauntTime;
+                    } else {
+                        monster.state = 'CHASE';
+                        monster.stateTimer = 0.5;
+                    }
+                } else {
+                    if (dist > 22) {
+                        monster.state = Math.random() < 0.4 ? 'ATTACK_BREATH' : 'CHASE';
+                    } else if (dist > 8) {
+                        const rnd = Math.random();
+                        if (rnd < 0.4) monster.state = 'ATTACK_CHARGE';
+                        else if (rnd < 0.7) monster.state = 'ATTACK_BREATH';
+                        else monster.state = 'CHASE';
+                    } else {
+                        monster.state = Math.random() < 0.5 ? 'ATTACK_CLAW' : 'ATTACK_BREATH';
+                    }
+                    monster.stateTimer = selectedMonsterKey === 'UNREASONABLE' ? (0.5 + Math.random() * 0.4) : (1.2 + Math.random() * 0.8);
+                    monster.hasFiredBreath = false;
+                }
+            }
+
+            // Execute Actions
+            if (monster.state === 'CHASE') {
+                if (dist > 6) {
+                    const moveDir = dirToPlayer.clone().normalize();
+                    bossPos.add(moveDir.multiplyScalar(monster.speed * delta));
+                }
+            } else if (monster.state === 'ATTACK_CHARGE') {
+                const chargeDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), monster.mesh.rotation.y);
+                bossPos.add(chargeDir.multiplyScalar(monster.chargeSpeed * delta));
+
+                if (dist < 4.5 && !player.invincible) {
+                    damagePlayer(Math.floor(15 * monster.damageMult));
+                    triggerScreenShake(selectedMonsterKey === 'UNREASONABLE' ? 0.5 : 0.2);
+                }
+            } else if (monster.state === 'ATTACK_BREATH') {
+                if (!monster.hasFiredBreath && monster.stateTimer < (selectedMonsterKey === 'UNREASONABLE' ? 0.9 : 0.6)) {
+                    monster.hasFiredBreath = true;
+                    sfx.playFireBreath();
+                    fireBreathProjectile();
+                    // Unreasonable monster fires double fireballs!
+                    if (selectedMonsterKey === 'UNREASONABLE') {
+                        setTimeout(() => fireBreathProjectile(), 180);
+                    }
+                }
+            } else if (monster.state === 'ATTACK_CLAW') {
+                if (dist < 5.0 && !player.invincible && monster.stateTimer < 0.5) {
+                    damagePlayer(Math.floor(12 * monster.damageMult));
+                    triggerScreenShake(0.2);
+                }
+            } else if (monster.state === 'TAUNT') {
+                monster.mesh.position.y = Math.sin(Date.now() * 0.005) * 0.2;
+            }
+
+            if (bossPos.length() > arenaRadius - 4) {
+                bossPos.normalize().multiplyScalar(arenaRadius - 4);
+            }
+        }
+
+        function fireBreathProjectile() {
+            if (!monster.mesh || !player.mesh) return;
+            const headWorldPos = new THREE.Vector3();
+            if (monster.headMesh) {
+                monster.headMesh.getWorldPosition(headWorldPos);
+            } else {
+                headWorldPos.copy(monster.mesh.position).add(new THREE.Vector3(0, 4, 0));
+            }
+            const targetPos = player.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+            const dir = new THREE.Vector3().subVectors(targetPos, headWorldPos).normalize();
+
+            const isUnreasonable = selectedMonsterKey === 'UNREASONABLE';
+            const geo = new THREE.SphereGeometry(isUnreasonable ? 1.8 : 1.2, 16, 16);
+            const mat = new THREE.MeshBasicMaterial({ color: isUnreasonable ? 0xff00bb : 0xff4400 });
+            const ball = new THREE.Mesh(geo, mat);
+            ball.position.copy(headWorldPos);
+
+            scene.add(ball);
+            breathProjectiles.push({
+                mesh: ball,
+                dir: dir,
+                speed: isUnreasonable ? 36 : 24,
+                life: 3.5
+            });
+        }
+
+        function updateBreathProjectiles(delta) {
+            for (let i = breathProjectiles.length - 1; i >= 0; i--) {
+                const p = breathProjectiles[i];
+                p.life -= delta;
+                p.mesh.position.add(p.dir.clone().multiplyScalar(p.speed * delta));
+
+                if (player.mesh) {
+                    const distToPlayer = p.mesh.position.distanceTo(player.mesh.position.clone().add(new THREE.Vector3(0, 1, 0)));
+                    if (distToPlayer < 2.2) {
+                        if (!player.invincible) {
+                            damagePlayer(Math.floor(10 * monster.damageMult));
+                            triggerScreenShake(0.3);
+                        }
+                        createSparks(p.mesh.position, 15, 0xff3300);
+                        scene.remove(p.mesh);
+                        breathProjectiles.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                if (p.life <= 0 || p.mesh.position.y <= 0) {
+                    createSparks(p.mesh.position, 8, 0xff5500);
+                    scene.remove(p.mesh);
+                    breathProjectiles.splice(i, 1);
+                }
+            }
+        }
+
+        function performDodge() {
+            if (player.isDodging || player.stamina < 20) return;
+            player.stamina -= 20;
+            player.isDodging = true;
+            player.dodgeTimer = player.dodgeDuration;
+            player.invincible = true;
+            sfx.playDodge();
+
+            setTimeout(() => { player.invincible = false; }, 320);
+        }
+
+        function usePotion() {
+            if (player.potions <= 0 || player.hp >= player.maxHp) return;
+            player.potions--;
+            player.hp = Math.min(player.maxHp, player.hp + 60);
+            sfx.playPotion();
+            if (player.mesh) {
+                createSparks(player.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 15, 0x00ff88);
+            }
+            updateUI();
+        }
+
+        function damagePlayer(amount) {
+            if (player.invincible || gameState !== 'PLAYING') return;
+            player.hp = Math.max(0, player.hp - amount);
+            sfx.playHeavyHit();
+            triggerHitStop(80);
+            updateUI();
+
+            if (player.hp <= 0) {
+                onGameOver();
+            }
+        }
+
+        function checkPlayerHitbox(baseDamage, isHeavy) {
+            if (!monster.mesh || !player.mesh) return;
+
+            const playerPos = player.mesh.position;
+
+            // Gather World positions of monster body parts
+            const parts = [];
+            if (monster.headMesh) {
+                const headPos = new THREE.Vector3();
+                monster.headMesh.getWorldPosition(headPos);
+                parts.push({ name: '頭部 (弱点)', pos: headPos, distRadius: 3.5, multiplier: 1.8, isWeak: true });
+            }
+            if (monster.tailMesh) {
+                const tailPos = new THREE.Vector3();
+                monster.tailMesh.getWorldPosition(tailPos);
+                parts.push({ name: '尾', pos: tailPos, distRadius: 3.8, multiplier: 1.4, isWeak: false });
+            }
+            if (monster.wingLMesh) {
+                const wingLPos = new THREE.Vector3();
+                monster.wingLMesh.getWorldPosition(wingLPos);
+                parts.push({ name: '翼', pos: wingLPos, distRadius: 4.2, multiplier: 0.8, isWeak: false });
+            }
+            if (monster.wingRMesh) {
+                const wingRPos = new THREE.Vector3();
+                monster.wingRMesh.getWorldPosition(wingRPos);
+                parts.push({ name: '翼', pos: wingRPos, distRadius: 4.2, multiplier: 0.8, isWeak: false });
+            }
+            if (monster.bodyMesh) {
+                const bodyPos = new THREE.Vector3();
+                monster.bodyMesh.getWorldPosition(bodyPos);
+                parts.push({ name: '胴体', pos: bodyPos, distRadius: 4.5, multiplier: 1.0, isWeak: false });
+            }
+
+            // Find closest part within attack range
+            let closestPart = null;
+            let minDistance = 999;
+
+            parts.forEach(part => {
+                const d = playerPos.distanceTo(part.pos);
+                if (d < part.distRadius && d < minDistance) {
+                    minDistance = d;
+                    closestPart = part;
+                }
+            });
+
+            if (closestPart) {
+                const finalDamage = Math.floor(baseDamage * closestPart.multiplier);
+                monster.hp = Math.max(0, monster.hp - finalDamage);
+
+                sfx.playHeavyHit();
+                createSparks(closestPart.pos, isHeavy ? 20 : 10, closestPart.isWeak ? 0xffcc00 : 0xff4411);
+                showDamageNumber(`${closestPart.name} ${finalDamage}`, closestPart.pos, closestPart.isWeak);
+
+                if (isHeavy) triggerScreenShake(0.3);
+
+                if (monster.hp <= 0) {
+                    onVictory();
+                }
+            }
+        }
+
+        function createSparks(pos, count, colorHex) {
+            for (let i = 0; i < count; i++) {
+                const geo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+                const mat = new THREE.MeshBasicMaterial({ color: colorHex });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.copy(pos);
+
+                const vel = new THREE.Vector3(
+                    (Math.random() - 0.5) * 12,
+                    Math.random() * 8 + 2,
+                    (Math.random() - 0.5) * 12
+                );
+
+                scene.add(mesh);
+                particles.push({ mesh, vel, life: 0.4 + Math.random() * 0.3 });
+            }
+        }
+
+        function showDamageNumber(text, pos, isCritical) {
+            if (!camera) return;
+            const screenPos = pos.clone().project(camera);
+            if (screenPos.z > 1) return;
+
+            const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-(screenPos.y * 0.5) + 0.5) * window.innerHeight;
+
+            const el = document.createElement('div');
+            el.className = 'damage-number ' + (isCritical ? 'text-amber-300 text-2xl sm:text-3xl' : 'text-white text-lg sm:text-xl');
+            el.innerText = text;
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+
+            const container = document.getElementById('ui-container');
+            if (container) {
+                container.appendChild(el);
+                setTimeout(() => { el.remove(); }, 800);
+            }
+        }
+
+        function triggerScreenShake(amt) {
+            shakeIntensity = Math.max(shakeIntensity, amt);
+        }
+
+        function triggerHitStop(durationMs) {
+            hitStopTimer = durationMs / 1000;
+        }
+
+        function setupEventListeners() {
+            window.addEventListener('resize', onWindowResize, false);
+
+            const btnStart = document.getElementById('btn-start');
+            if (btnStart) btnStart.addEventListener('click', startGame);
+
+            const btnRestart = document.getElementById('btn-restart');
+            if (btnRestart) btnRestart.addEventListener('click', returnToStartScreen);
+
+            // Attack & Charge Button bindings
+            const btnAttack = document.getElementById('btn-touch-attack');
+            if (btnAttack) {
+                btnAttack.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    triggerSlashAttack();
+                });
+            }
+
+            const btnCharge = document.getElementById('btn-touch-charge');
+            if (btnCharge) {
+                btnCharge.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    startChargeAttack();
+                });
+                btnCharge.addEventListener('pointerup', (e) => {
+                    e.preventDefault();
+                    releaseChargeAttack();
+                });
+                btnCharge.addEventListener('pointerleave', (e) => {
+                    if (player.isCharging) releaseChargeAttack();
+                });
+            }
+
+            const btnDodge = document.getElementById('btn-touch-dodge');
+            if (btnDodge) {
+                btnDodge.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    performDodge();
+                });
+            }
+
+            const btnPotion = document.getElementById('btn-touch-potion');
+            if (btnPotion) {
+                btnPotion.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    usePotion();
+                });
+            }
+
+            const btnLockon = document.getElementById('btn-touch-lockon');
+            if (btnLockon) {
+                btnLockon.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    toggleLockOn();
+                });
+            }
+
+            // Keyboard Controls
+            window.addEventListener('keydown', (e) => {
+                if (e.repeat) return;
+                keys[e.code] = true;
+                if (e.code === 'KeyJ') triggerSlashAttack();
+                if (e.code === 'KeyK') startChargeAttack();
+                if (e.code === 'Space') performDodge();
+                if (e.code === 'KeyE') usePotion();
+                if (e.code === 'KeyF') toggleLockOn();
+            });
+
+            window.addEventListener('keyup', (e) => {
+                keys[e.code] = false;
+                if (e.code === 'KeyK' && player.isCharging) releaseChargeAttack();
+            });
+
+            setupJoystick();
+            setupCameraControls();
+        }
+
+        function toggleLockOn() {
+            lockOn = !lockOn;
+            const marker = document.getElementById('lockon-marker');
+            if (marker) {
+                if (!lockOn) marker.classList.add('hidden');
+                else marker.classList.remove('hidden');
+            }
+        }
+
+        function setupJoystick() {
+            const joystickZone = document.getElementById('joystick-zone');
+            const joystickKnob = document.getElementById('joystick-knob');
+            let joystickTouchId = null;
+
+            if (!joystickZone || !joystickKnob) return;
+
+            joystickZone.addEventListener('touchstart', (e) => {
+                const touch = e.changedTouches[0];
+                joystickTouchId = touch.identifier;
+                updateJoystick(touch);
+            }, { passive: false });
+
+            joystickZone.addEventListener('touchmove', (e) => {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === joystickTouchId) {
+                        e.preventDefault();
+                        updateJoystick(e.changedTouches[i]);
+                        break;
+                    }
+                }
+            }, { passive: false });
+
+            const resetJoystick = (e) => {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === joystickTouchId) {
+                        joystickTouchId = null;
+                        joystickVector.x = 0;
+                        joystickVector.y = 0;
+                        joystickKnob.style.transform = `translate(0px, 0px)`;
+                        break;
+                    }
+                }
+            };
+
+            joystickZone.addEventListener('touchend', resetJoystick);
+            joystickZone.addEventListener('touchcancel', resetJoystick);
+
+            function updateJoystick(touch) {
+                const rect = joystickZone.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const maxRadius = rect.width / 2;
+
+                let dx = touch.clientX - centerX;
+                let dy = touch.clientY - centerY;
+                const dist = Math.hypot(dx, dy);
+
+                if (dist > maxRadius) {
+                    dx = (dx / dist) * maxRadius;
+                    dy = (dy / dist) * maxRadius;
+                }
+
+                joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+                joystickVector.x = dx / maxRadius;
+                joystickVector.y = dy / maxRadius;
+            }
+        }
+
+        function setupCameraControls() {
+            let isDragging = false;
+            let startPos = { x: 0, y: 0 };
+            let cameraTouchId = null;
+
+            const cameraZone = document.getElementById('touch-camera-zone');
+            if (cameraZone) {
+                cameraZone.addEventListener('touchstart', (e) => {
+                    if (cameraTouchId === null) {
+                        const touch = e.changedTouches[0];
+                        cameraTouchId = touch.identifier;
+                        startPos = { x: touch.clientX, y: touch.clientY };
+                    }
+                }, { passive: false });
+
+                cameraZone.addEventListener('touchmove', (e) => {
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        if (e.changedTouches[i].identifier === cameraTouchId) {
+                            e.preventDefault();
+                            const touch = e.changedTouches[i];
+                            const dx = touch.clientX - startPos.x;
+                            const dy = touch.clientY - startPos.y;
+
+                            if (!lockOn) {
+                                cameraAngleX -= dx * 0.008;
+                                cameraAngleY = Math.max(0.1, Math.min(1.2, cameraAngleY + dy * 0.008));
+                            }
+
+                            startPos = { x: touch.clientX, y: touch.clientY };
+                            break;
+                        }
+                    }
+                }, { passive: false });
+
+                const endCameraTouch = (e) => {
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        if (e.changedTouches[i].identifier === cameraTouchId) {
+                            cameraTouchId = null;
+                            break;
+                        }
+                    }
+                };
+
+                cameraZone.addEventListener('touchend', endCameraTouch);
+                cameraZone.addEventListener('touchcancel', endCameraTouch);
+            }
+
+            window.addEventListener('mousedown', (e) => {
+                if (e.target.tagName === 'BUTTON' || e.target.closest('#mobile-controls') || e.target.closest('#modal-start')) return;
+                
+                if (e.button === 0) {
+                    isDragging = true;
+                    startPos = { x: e.clientX, y: e.clientY };
+                } else if (e.button === 2) {
+                    startChargeAttack();
+                }
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const dx = e.clientX - startPos.x;
+                    const dy = e.clientY - startPos.y;
+
+                    if (!lockOn) {
+                        cameraAngleX -= dx * 0.006;
+                        cameraAngleY = Math.max(0.1, Math.min(1.2, cameraAngleY + dy * 0.006));
+                    }
+
+                    startPos = { x: e.clientX, y: e.clientY };
+                }
+            });
+
+            window.addEventListener('mouseup', (e) => {
+                if (e.button === 0) {
+                    isDragging = false;
+                } else if (e.button === 2) {
+                    releaseChargeAttack();
+                }
+            });
+
+            window.addEventListener('contextmenu', (e) => e.preventDefault());
+        }
+
+        function triggerSlashAttack() {
+            if (player.isCharging || player.isDodging || gameState !== 'PLAYING') return;
+
+            player.isAttacking = true;
+
+            if (player.weapon === 'GREATSWORD') {
+                player.comboStep = (player.comboStep % 3) + 1;
+                sfx.playSwing();
+
+                const sword = player.greatswordMesh;
+                if (sword) {
+                    sword.position.set(0, 1.2, 0.8);
+                    sword.rotation.set(Math.PI / 3, 0, player.comboStep % 2 === 0 ? Math.PI / 4 : -Math.PI / 4);
+                }
+
+                checkPlayerHitbox(40 * player.comboStep, false);
+
+                setTimeout(() => {
+                    if (!player.isCharging && sword) {
+                        sword.position.set(0, 1.8, -0.5);
+                        sword.rotation.set(0, 0, -Math.PI * 0.75);
+                        player.isAttacking = false;
+                    }
+                }, 280);
+
+            } else if (player.weapon === 'DUAL_BLADES') {
+                sfx.playFastSwing();
+                const db = player.dualBladesMesh;
+                if (db) db.rotation.y = (db.rotation.y + Math.PI / 2) % (Math.PI * 2);
+
+                // Reduced Dual Blades attack damage from 18 to 9 per hit for fair scaling
+                checkPlayerHitbox(9, false);
+                setTimeout(() => checkPlayerHitbox(9, false), 100);
+
+                setTimeout(() => {
+                    if (db) db.rotation.y = 0;
+                    player.isAttacking = false;
+                }, 200);
+
+            } else if (player.weapon === 'BOW') {
+                sfx.playArrowShot();
+                fireArrow(0, 32);
+                setTimeout(() => { player.isAttacking = false; }, 250);
+            }
+        }
+
+        function startChargeAttack() {
+            if (player.isDodging || gameState !== 'PLAYING') return;
+
+            if (player.weapon === 'DUAL_BLADES') {
+                sfx.playFastSwing();
+                player.isAttacking = true;
+                const dashDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotationY);
+                
+                let steps = 0;
+                const interval = setInterval(() => {
+                    if (player.mesh) {
+                        player.mesh.position.add(dashDir.clone().multiplyScalar(1.2));
+                        player.mesh.rotation.y += Math.PI / 2;
+                        // Reduced Rush Attack damage from 25 to 11 per hit
+                        checkPlayerHitbox(11, false);
+                        createSparks(player.mesh.position.clone().add(new THREE.Vector3(0, 1, 0)), 4, 0x33aaff);
+                    }
+                    steps++;
+                    if (steps >= 6) {
+                        clearInterval(interval);
+                        if (player.mesh) player.mesh.rotation.y = player.rotationY;
+                        player.isAttacking = false;
+                    }
+                }, 50);
+                return;
+            }
+
+            player.isCharging = true;
+            player.chargeLevel = 0;
+            player.chargeTimer = 0;
+
+            const chargeContainer = document.getElementById('charge-container');
+            if (chargeContainer) chargeContainer.classList.remove('hidden');
+
+            if (player.weapon === 'GREATSWORD' && player.greatswordMesh) {
+                const sword = player.greatswordMesh;
+                sword.position.set(0.4, 1.0, 0.4);
+                sword.rotation.set(-Math.PI / 1.2, 0, Math.PI / 6);
+            } else if (player.weapon === 'BOW' && player.bowMesh) {
+                const bow = player.bowMesh;
+                bow.position.set(0, 0.2, 0.5);
+            }
+        }
+
+        function releaseChargeAttack() {
+            if (!player.isCharging) return;
+
+            const finalLevel = player.chargeLevel;
+            player.isCharging = false;
+            
+            const chargeContainer = document.getElementById('charge-container');
+            if (chargeContainer) chargeContainer.classList.add('hidden');
+
+            if (player.weapon === 'GREATSWORD') {
+                sfx.playSwing();
+                const sword = player.greatswordMesh;
+                if (sword) {
+                    sword.position.set(0, 1.0, 1.2);
+                    sword.rotation.set(Math.PI / 2.2, 0, 0);
+                }
+
+                const baseDamage = 80;
+                const multiplier = finalLevel === 3 ? 3.6 : (finalLevel === 2 ? 2.1 : 1.2);
+                checkPlayerHitbox(baseDamage * multiplier, true);
+
+                if (finalLevel === 3 && player.mesh) {
+                    triggerScreenShake(0.35);
+                    triggerHitStop(130);
+                    const forwardPos = player.mesh.position.clone().add(
+                        new THREE.Vector3(0, 0, 2.5).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotationY)
+                    );
+                    createSparks(forwardPos, 22, 0xffd700);
+                }
+
+                setTimeout(() => {
+                    if (sword) {
+                        sword.position.set(0, 1.8, -0.5);
+                        sword.rotation.set(0, 0, -Math.PI * 0.75);
+                    }
+                    player.isAttacking = false;
+                }, 380);
+
+            } else if (player.weapon === 'BOW') {
+                sfx.playArrowShot();
+                const arrowCount = finalLevel === 3 ? 3 : (finalLevel === 2 ? 2 : 1);
+                const arrowDamage = 38 * (finalLevel + 1);
+
+                for (let i = 0; i < arrowCount; i++) {
+                    setTimeout(() => {
+                        fireArrow(arrowCount > 1 ? (i - (arrowCount - 1) / 2) * 0.12 : 0, arrowDamage);
+                    }, i * 70);
+                }
+
+                if (player.bowMesh) player.bowMesh.position.set(0, 0, 0);
+                player.isAttacking = false;
+            }
+        }
+
+        function fireArrow(spreadAngle, damage) {
+            if (!player.mesh) return;
+            const startPos = player.mesh.position.clone().add(new THREE.Vector3(0, 1.6, 0));
+            const geo = new THREE.CylinderGeometry(0.05, 0.05, 1.4, 6);
+            const mat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
+            const arrow = new THREE.Mesh(geo, mat);
+
+            let dir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotationY + spreadAngle);
+
+            // Probability distribution:
+            // 20% Head (Weakspot), 60% Body/Tail (Normal), 20% Miss
+            const roll = Math.random();
+            let targetType = 'BODY';
+
+            if (roll < 0.20) {
+                targetType = 'HEAD'; // Exactly 20% chance to hit Head
+            } else if (roll >= 0.80) {
+                targetType = 'MISS'; // 20% chance to Miss
+            }
+
+            if (monster.mesh) {
+                const targetPos = new THREE.Vector3();
+                if (targetType === 'HEAD' && monster.headMesh) {
+                    monster.headMesh.getWorldPosition(targetPos);
+                } else if (targetType === 'BODY' && monster.bodyMesh) {
+                    monster.bodyMesh.getWorldPosition(targetPos);
+                } else {
+                    // MISS: Aim noticeably away from monster
+                    monster.mesh.getWorldPosition(targetPos);
+                    targetPos.x += (Math.random() - 0.5) * 18;
+                    targetPos.y += (Math.random() - 0.5) * 8 + 4;
+                    targetPos.z += (Math.random() - 0.5) * 18;
+                }
+
+                const aimDir = new THREE.Vector3().subVectors(targetPos, startPos).normalize();
+                if (targetType !== 'MISS') {
+                    dir.lerp(aimDir, 0.75).normalize();
+                } else {
+                    dir.copy(aimDir);
+                }
+            }
+
+            arrow.position.copy(startPos);
+            arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+
+            scene.add(arrow);
+            playerProjectiles.push({
+                mesh: arrow,
+                dir: dir,
+                speed: 60,
+                damage: damage,
+                life: 1.8,
+                targetType: targetType
+            });
+        }
+
+        function updatePlayerProjectiles(delta) {
+            for (let i = playerProjectiles.length - 1; i >= 0; i--) {
+                const p = playerProjectiles[i];
+                p.life -= delta;
+
+                // Bow arrow homing towards chosen target
+                if (p.targetType !== 'MISS' && monster.mesh) {
+                    const targetPos = new THREE.Vector3();
+                    if (p.targetType === 'HEAD' && monster.headMesh) {
+                        monster.headMesh.getWorldPosition(targetPos);
+                    } else if (monster.bodyMesh) {
+                        monster.bodyMesh.getWorldPosition(targetPos);
+                    }
+
+                    if (targetPos.lengthSq() > 0) {
+                        const toTarget = new THREE.Vector3().subVectors(targetPos, p.mesh.position).normalize();
+                        p.dir.lerp(toTarget, delta * 3.5).normalize();
+                        p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p.dir);
+                    }
+                }
+
+                p.mesh.position.add(p.dir.clone().multiplyScalar(p.speed * delta));
+
+                if (monster.mesh && p.targetType !== 'MISS') {
+                    // Part hit detection based on target type
+                    let parts = [];
+                    if (p.targetType === 'HEAD') {
+                        parts = [
+                            { name: '頭部 (弱点)', mesh: monster.headMesh, radius: 2.8, mult: 1.8, isWeak: true },
+                            { name: '胴体', mesh: monster.bodyMesh, radius: 3.5, mult: 1.0, isWeak: false }
+                        ];
+                    } else {
+                        parts = [
+                            { name: '胴体', mesh: monster.bodyMesh, radius: 3.5, mult: 1.0, isWeak: false },
+                            { name: '尾', mesh: monster.tailMesh, radius: 2.8, mult: 1.4, isWeak: false }
+                        ];
+                    }
+
+                    let hitPart = null;
+                    for (const pt of parts) {
+                        if (!pt.mesh) continue;
+                        const partPos = new THREE.Vector3();
+                        pt.mesh.getWorldPosition(partPos);
+                        if (p.mesh.position.distanceTo(partPos) < pt.radius) {
+                            hitPart = { ...pt, pos: partPos };
+                            break;
+                        }
+                    }
+
+                    if (hitPart) {
+                        const finalDmg = Math.floor(p.damage * hitPart.mult);
+                        monster.hp = Math.max(0, monster.hp - finalDmg);
+                        sfx.playHeavyHit();
+                        createSparks(p.mesh.position, 12, hitPart.isWeak ? 0xffcc00 : 0xffaa00);
+                        showDamageNumber(`${hitPart.name} ${finalDmg}`, p.mesh.position, hitPart.isWeak);
+
+                        if (monster.hp <= 0) onVictory();
+
+                        scene.remove(p.mesh);
+                        playerProjectiles.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    playerProjectiles.splice(i, 1);
+                }
+            }
+        }
+
+        function startGame() {
+            sfx.resume();
+
+            particles.forEach(p => scene.remove(p.mesh));
+            particles = [];
+
+            breathProjectiles.forEach(p => scene.remove(p.mesh));
+            breathProjectiles = [];
+
+            playerProjectiles.forEach(p => scene.remove(p.mesh));
+            playerProjectiles = [];
+
+            player.hp = player.maxHp = 100;
+            player.stamina = player.maxStamina = 100;
+            player.potions = 5;
+            if (player.mesh) player.mesh.position.set(0, 0, 20);
+            
+            // Re-apply selected monster configuration
+            selectMonster(selectedMonsterKey);
+            if (monster.mesh) monster.mesh.position.set(0, 0, -25);
+            monster.state = 'CHASE';
+            monster.hasFiredBreath = false;
+
+            questStartTime = Date.now();
+            gameState = 'PLAYING';
+
+            const modalOverlay = document.getElementById('modal-overlay');
+            const modalStart = document.getElementById('modal-start');
+            const modalResult = document.getElementById('modal-result');
+
+            if (modalOverlay) modalOverlay.classList.add('hidden');
+            if (modalStart) modalStart.classList.add('hidden');
+            if (modalResult) modalResult.classList.add('hidden');
+
+            updateUI();
+        }
+
+        function returnToStartScreen() {
+            gameState = 'START';
+
+            particles.forEach(p => scene.remove(p.mesh));
+            particles = [];
+
+            breathProjectiles.forEach(p => scene.remove(p.mesh));
+            breathProjectiles = [];
+
+            playerProjectiles.forEach(p => scene.remove(p.mesh));
+            playerProjectiles = [];
+
+            const modalOverlay = document.getElementById('modal-overlay');
+            const modalStart = document.getElementById('modal-start');
+            const modalResult = document.getElementById('modal-result');
+
+            if (modalOverlay) modalOverlay.classList.remove('hidden');
+            if (modalStart) modalStart.classList.remove('hidden');
+            if (modalResult) modalResult.classList.add('hidden');
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+
+            if (hitStopTimer > 0) {
+                hitStopTimer -= delta;
+                return;
+            }
+
+            if (gameState === 'PLAYING') {
+                updatePlayer(delta);
+                updateMonsterAI(delta);
+                updateBreathProjectiles(delta);
+                updatePlayerProjectiles(delta);
+                updateParticles(delta);
+                updateCamera();
+                updateUI();
+            }
+
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+
+        function updatePlayer(delta) {
+            if (!player.mesh) return;
+
+            if (!keys['ShiftLeft'] && !keys['ShiftRight'] && !player.isDodging && player.stamina < player.maxStamina) {
+                player.stamina = Math.min(player.maxStamina, player.stamina + 20 * delta);
+            }
+
+            if (player.isDodging) {
+                player.dodgeTimer -= delta;
+                const rollDir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotationY);
+                player.mesh.position.add(rollDir.multiplyScalar(22 * delta));
+                player.mesh.rotation.x += delta * 15;
+
+                if (player.dodgeTimer <= 0) {
+                    player.isDodging = false;
+                    player.mesh.rotation.x = 0;
+                }
+                return;
+            }
+
+            if (player.isCharging) {
+                player.chargeTimer += delta;
+                let newLevel = 0;
+                if (player.chargeTimer > 2.0) newLevel = 3;
+                else if (player.chargeTimer > 1.0) newLevel = 2;
+                else if (player.chargeTimer > 0.4) newLevel = 1;
+
+                if (newLevel > player.chargeLevel) {
+                    player.chargeLevel = newLevel;
+                    sfx.playChargePing(player.chargeLevel);
+                    createSparks(player.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 10, 0xffbb00);
+                }
+                updateChargeUI();
+            }
+
+            // Movement Calculation
+            let moveX = 0, moveZ = 0;
+            if (keys['KeyW'] || keys['ArrowUp']) moveZ -= 1;
+            if (keys['KeyS'] || keys['ArrowDown']) moveZ += 1;
+            if (keys['KeyA'] || keys['ArrowLeft']) moveX -= 1;
+            if (keys['KeyD'] || keys['ArrowRight']) moveX += 1;
+
+            if (joystickVector.x !== 0 || joystickVector.y !== 0) {
+                moveX = joystickVector.x;
+                moveZ = joystickVector.y;
+            }
+
+            if (moveX !== 0 || moveZ !== 0) {
+                const isSprinting = (keys['ShiftLeft'] || keys['ShiftRight'] || Math.hypot(moveX, moveZ) > 0.85) && player.stamina > 5;
+                const currentSpeed = isSprinting ? player.sprintSpeed : player.speed;
+
+                const moveDir = new THREE.Vector3(moveX, 0, moveZ).normalize();
+                moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngleX);
+
+                player.mesh.position.add(moveDir.multiplyScalar(currentSpeed * delta));
+                player.rotationY = Math.atan2(moveDir.x, moveDir.z);
+                player.mesh.rotation.y = player.rotationY;
+
+                if (isSprinting) {
+                    player.stamina = Math.max(0, player.stamina - 22 * delta);
+                }
+            }
+
+            if (player.mesh.position.length() > arenaRadius - 2) {
+                player.mesh.position.normalize().multiplyScalar(arenaRadius - 2);
+            }
+        }
+
+        function updateCamera() {
+            if (!player.mesh || !camera) return;
+
+            let targetPos = player.mesh.position.clone().add(new THREE.Vector3(0, 2, 0));
+
+            if (lockOn && monster.mesh) {
+                const bossPos = monster.mesh.position.clone().add(new THREE.Vector3(0, 3, 0));
+                const dirToBoss = new THREE.Vector3().subVectors(bossPos, targetPos).normalize();
+                cameraAngleX = Math.atan2(-dirToBoss.x, -dirToBoss.z);
+
+                const screenPos = bossPos.clone().project(camera);
+                const marker = document.getElementById('lockon-marker');
+                if (marker) {
+                    marker.style.left = `${(screenPos.x * 0.5 + 0.5) * window.innerWidth}px`;
+                    marker.style.top = `${(-(screenPos.y * 0.5) + 0.5) * window.innerHeight}px`;
+                }
+            }
+
+            const offsetX = cameraDistance * Math.sin(cameraAngleX) * Math.cos(cameraAngleY);
+            const offsetY = cameraDistance * Math.sin(cameraAngleY);
+            const offsetZ = cameraDistance * Math.cos(cameraAngleX) * Math.cos(cameraAngleY);
+
+            let shakeOffset = new THREE.Vector3();
+            if (shakeIntensity > 0) {
+                shakeOffset.set(
+                    (Math.random() - 0.5) * shakeIntensity,
+                    (Math.random() - 0.5) * shakeIntensity,
+                    (Math.random() - 0.5) * shakeIntensity
+                );
+                shakeIntensity = Math.max(0, shakeIntensity - 0.02);
+            }
+
+            camera.position.set(
+                targetPos.x + offsetX + shakeOffset.x,
+                targetPos.y + offsetY + shakeOffset.y,
+                targetPos.z + offsetZ + shakeOffset.z
+            );
+
+            camera.lookAt(targetPos);
+        }
+
+        function updateParticles(delta) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.life -= delta;
+                p.mesh.position.add(p.vel.clone().multiplyScalar(delta));
+                p.mesh.scale.multiplyScalar(0.92);
+
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function updateUI() {
+            const hpBar = document.getElementById('hp-bar');
+            if (hpBar) hpBar.style.width = `${(player.hp / player.maxHp) * 100}%`;
+
+            const hpText = document.getElementById('hp-text');
+            if (hpText) hpText.innerText = `${Math.ceil(player.hp)} / ${player.maxHp}`;
+
+            const staminaBar = document.getElementById('stamina-bar');
+            if (staminaBar) staminaBar.style.width = `${(player.stamina / player.maxStamina) * 100}%`;
+
+            const staminaText = document.getElementById('stamina-text');
+            if (staminaText) staminaText.innerText = `${Math.ceil(player.stamina)} / ${player.maxStamina}`;
+
+            const bossHpBar = document.getElementById('boss-hp-bar');
+            if (bossHpBar) bossHpBar.style.width = `${(monster.hp / monster.maxHp) * 100}%`;
+
+            const bossHpText = document.getElementById('boss-hp-text');
+            if (bossHpText) bossHpText.innerText = `${Math.ceil(monster.hp)} / ${monster.maxHp}`;
+
+            const potionCount = document.getElementById('potion-count');
+            if (potionCount) potionCount.innerText = player.potions;
+
+            const mobilePotionCount = document.getElementById('mobile-potion-count');
+            if (mobilePotionCount) mobilePotionCount.innerText = player.potions;
+
+            const elapsed = Math.floor((Date.now() - questStartTime) / 1000);
+            const remaining = Math.max(0, questTime - elapsed);
+            const mins = Math.floor(remaining / 60).toString().padStart(2, '0');
+            const secs = (remaining % 60).toString().padStart(2, '0');
+            const questTimer = document.getElementById('quest-timer');
+            if (questTimer) questTimer.innerText = `${mins}:${secs}`;
+        }
+
+        function updateChargeUI() {
+            for (let i = 1; i <= 3; i++) {
+                const el = document.getElementById(`charge-${i}`);
+                if (!el) continue;
+                if (player.chargeLevel >= i) {
+                    el.className = 'w-5 sm:w-6 h-2.5 sm:h-3 border border-amber-300 rounded bg-amber-400 charge-glow';
+                } else {
+                    el.className = 'w-5 sm:w-6 h-2.5 sm:h-3 border border-gray-600 rounded bg-gray-800';
+                }
+            }
+        }
+
+        function onVictory() {
+            gameState = 'VICTORY';
+
+            const timeSecs = Math.floor((Date.now() - questStartTime) / 1000);
+            const mins = Math.floor(timeSecs / 60);
+            const secs = timeSecs % 60;
+
+            const modalOverlay = document.getElementById('modal-overlay');
+            const modalResult = document.getElementById('modal-result');
+
+            if (modalOverlay) modalOverlay.classList.remove('hidden');
+            if (modalResult) modalResult.classList.remove('hidden');
+            
+            const title = document.getElementById('result-title');
+            if (title) {
+                title.innerText = 'QUEST COMPLETE!';
+                title.className = 'text-2xl sm:text-4xl font-black font-cinzel text-amber-400 tracking-wider';
+            }
+
+            const preset = MONSTER_PRESETS[selectedMonsterKey];
+            const reward = selectedMonsterKey === 'UNREASONABLE' ? '120,000 z (理不尽ボーナス!)' : (selectedMonsterKey === 'NORMAL' ? '12,000 z' : '5,000 z');
+
+            const stats = document.getElementById('result-stats');
+            if (stats) {
+                stats.innerHTML = `
+                    <div class="text-emerald-400 font-bold text-base sm:text-lg mb-2">🎉 ${preset.shortName} 討伐成功！</div>
+                    <div>クリアタイム: <span class="text-white font-bold">${mins}分${secs}秒</span></div>
+                    <div>獲得報酬金: <span class="text-yellow-400 font-bold">${reward}</span></div>
+                    <div class="text-[10px] sm:text-xs text-gray-400 mt-2">素材と宝玉を獲得しました！</div>
+                `;
+            }
+        }
+
+        function onGameOver() {
+            gameState = 'GAMEOVER';
+
+            const modalOverlay = document.getElementById('modal-overlay');
+            const modalResult = document.getElementById('modal-result');
+
+            if (modalOverlay) modalOverlay.classList.remove('hidden');
+            if (modalResult) modalResult.classList.remove('hidden');
+
+            const title = document.getElementById('result-title');
+            if (title) {
+                title.innerText = 'QUEST FAILED';
+                title.className = 'text-2xl sm:text-4xl font-black font-cinzel text-red-600 tracking-wider';
+            }
+
+            const stats = document.getElementById('result-stats');
+            if (stats) {
+                stats.innerHTML = `
+                    <div class="text-red-400 font-bold text-base sm:text-lg mb-2">☠️ 力尽きました...</div>
+                    <div>メインターゲットの討伐に失敗しました。</div>
+                    <div class="text-[10px] sm:text-xs text-gray-400 mt-2">装備や立ち回りを見直して再挑戦しよう！</div>
+                `;
+            }
+        }
+
+        function onWindowResize() {
+            if (!camera || !renderer) return;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
